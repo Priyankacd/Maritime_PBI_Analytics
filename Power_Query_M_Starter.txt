@@ -1,0 +1,37 @@
+/*
+POWER QUERY M — STARTER TRANSFORMATIONS
+Recommended workflow:
+1. Get Data > Excel workbook > select source sheets.
+2. Promote headers and set types.
+3. Apply these rules in the respective query steps.
+4. Keep source queries as staging queries and disable load for staging.
+5. Load prepared queries to the model.
+This starter illustrates key transformations; adapt Source navigation names to your import.
+*/
+
+let
+    Source = Excel.Workbook(File.Contents("C:\\PATH\\TO\\1_Zodiac_BI_Analytics_Eng_Assessment_Data.xlsx"), null, true),
+    DailyRaw = Source{[Item="daily_operations",Kind="Sheet"]}[Data],
+    Promoted = Table.PromoteHeaders(DailyRaw, [PromoteAllScalars=true]),
+    Typed = Table.TransformColumnTypes(Promoted,{
+        {"vessel_id", type text}, {"report_date", type date},
+        {"distance_nm", type number}, {"steaming_hours", type number},
+        {"fuel_consumed_mt", type number}, {"co2_emissions_mt", type number},
+        {"downtime_hours", type number}, {"avg_speed_knots", type number},
+        {"report_status", type text}
+    }),
+    Trimmed = Table.TransformColumns(Typed,{
+        {"vessel_id", Text.Trim, type text},
+        {"report_status", Text.Trim, type text}
+    }),
+    ExactDuplicatesRemoved = Table.Distinct(Trimmed),
+    AddFuelValidFlag = Table.AddColumn(ExactDuplicatesRemoved, "fuel_valid_flag",
+        each [fuel_consumed_mt] <> null and [fuel_consumed_mt] >= 0, type logical),
+    AddCO2ValidFlag = Table.AddColumn(AddFuelValidFlag, "co2_valid_flag",
+        each [co2_emissions_mt] <> null and [co2_emissions_mt] >= 0, type logical),
+    AddSpeedReviewFlag = Table.AddColumn(AddCO2ValidFlag, "speed_review_flag",
+        each [avg_speed_knots] = null or [avg_speed_knots] < 0 or [avg_speed_knots] > 30, type logical),
+    AddSubmissionFlag = Table.AddColumn(AddSpeedReviewFlag, "report_submitted_flag",
+        each Text.Lower([report_status]) = "submitted", type logical)
+in
+    AddSubmissionFlag

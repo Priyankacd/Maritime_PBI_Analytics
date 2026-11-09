@@ -1,0 +1,116 @@
+/*
+ZODIAC MARITIME — POWER BI DAX MEASURE LIBRARY
+Assumed model:
+  DimVessel[vessel_id] 1:* FactDailyOperations[vessel_id]
+  DimVessel[vessel_id] 1:* FactMaintenance[vessel_id]
+  DimVessel[vessel_id] 1:* FactInspections[vessel_id]
+  DimDate[Date] 1:* FactDailyOperations[report_date] (active)
+  DimDate[Date] 1:* FactMaintenance[due_date] (active; use USERELATIONSHIP for completed date if desired)
+  DimDate[Date] 1:* FactInspections[inspection_date] (active)
+Use single-direction filters from dimensions to facts. Mark DimDate as the date table.
+Create measures in a dedicated Measures table.
+*/
+
+Vessel Count = DISTINCTCOUNT(DimVessel[vessel_id])
+
+Distance (nm) =
+SUM(FactDailyOperations[distance_nm])
+
+Valid Fuel Consumed (MT) =
+CALCULATE(
+    SUM(FactDailyOperations[fuel_consumed_mt]),
+    FactDailyOperations[fuel_valid_flag] = TRUE()
+)
+
+CO2 Emissions (MT) =
+CALCULATE(
+    SUM(FactDailyOperations[co2_emissions_mt]),
+    FactDailyOperations[co2_valid_flag] = TRUE()
+)
+
+Downtime (hours) =
+SUM(FactDailyOperations[downtime_hours])
+
+Fuel Intensity (MT per 1,000 nm) =
+DIVIDE([Valid Fuel Consumed (MT)] * 1000, [Distance (nm)])
+
+CO2 Intensity (MT per 1,000 nm) =
+DIVIDE([CO2 Emissions (MT)] * 1000, [Distance (nm)])
+
+Average Speed (knots) =
+AVERAGE(FactDailyOperations[avg_speed_knots])
+
+Submitted Reports =
+CALCULATE(
+    COUNTROWS(FactDailyOperations),
+    FactDailyOperations[report_submitted_flag] = TRUE()
+)
+
+Report Submission Rate =
+DIVIDE([Submitted Reports], COUNTROWS(FactDailyOperations))
+
+Non-Submitted Reports =
+CALCULATE(
+    COUNTROWS(FactDailyOperations),
+    FactDailyOperations[report_submitted_flag] = FALSE()
+)
+
+Open Maintenance Orders =
+CALCULATE(
+    COUNTROWS(FactMaintenance),
+    FactMaintenance[status] <> "Completed"
+)
+
+Overdue Maintenance Orders =
+CALCULATE(
+    COUNTROWS(FactMaintenance),
+    FactMaintenance[overdue_risk_flag] = TRUE()
+)
+
+Critical / High Open Orders =
+CALCULATE(
+    COUNTROWS(FactMaintenance),
+    FactMaintenance[status] <> "Completed",
+    FactMaintenance[priority] IN {"Critical", "High"}
+)
+
+Estimated Cost Exposure (USD) =
+CALCULATE(
+    SUM(FactMaintenance[estimated_cost_usd]),
+    FactMaintenance[status] <> "Completed"
+)
+
+Inspections =
+COUNTROWS(FactInspections)
+
+Inspections with Deficiencies =
+CALCULATE(
+    COUNTROWS(FactInspections),
+    FactInspections[deficiency_count] > 0
+)
+
+Detentions =
+CALCULATE(
+    COUNTROWS(FactInspections),
+    FactInspections[detained_flag_normalized] = TRUE()
+)
+
+Deficiencies =
+SUM(FactInspections[deficiency_count])
+
+Average Condition Score =
+AVERAGE(FactInspections[condition_score])
+
+Rows Requiring Data Review =
+CALCULATE(
+    COUNTROWS(FactDailyOperations),
+    FactDailyOperations[speed_review_flag] = TRUE()
+)
++ CALCULATE(
+    COUNTROWS(FactDailyOperations),
+    FactDailyOperations[fuel_valid_flag] = FALSE()
+)
++ CALCULATE(
+    COUNTROWS(FactDailyOperations),
+    FactDailyOperations[co2_valid_flag] = FALSE()
+)
